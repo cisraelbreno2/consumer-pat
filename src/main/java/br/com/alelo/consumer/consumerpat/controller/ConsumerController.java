@@ -1,132 +1,65 @@
 package br.com.alelo.consumer.consumerpat.controller;
 
-import br.com.alelo.consumer.consumerpat.entity.Consumer;
-import br.com.alelo.consumer.consumerpat.entity.Extract;
-import br.com.alelo.consumer.consumerpat.respository.ConsumerRepository;
-import br.com.alelo.consumer.consumerpat.respository.ExtractRepository;
-import lombok.extern.log4j.Log4j2;
-import org.springframework.beans.factory.annotation.Autowired;
+import br.com.alelo.consumer.consumerpat.business.ConsumerBusiness;
+import br.com.alelo.consumer.consumerpat.dto.*;
+import br.com.alelo.consumer.consumerpat.exception.standard.StandardRestHandler;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Controller;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Date;
-import java.util.List;
+/** Separei a responsabilidade da classe. Agora ela cuida apenas dos consumidores.
+ *  TODOS os objetos que referenciavam uma entidade diretamente foram convertidos para DTOs.
+ *  Modificado a anotacao @Controller para @RestController para evitar a necessidade de anotar todos os metodos com @ResponseBody.
+ *  Modificado a anotacao @Autowired para @RequiredArgsConstructor pois o proprio Spring nao recomenda o uso de @Autowired.
+ *  Retirado todas as regras de negocio da controller, deixando apenas a chamada para a classe business.
+ *  Extendi a classe StandardRestHandler para padronizar o retorno das respostas.
+ */
 
-@Log4j2
-@Controller
+@RestController
 @RequestMapping("/consumer")
-public class ConsumerController {
+@RequiredArgsConstructor
+public class ConsumerController extends StandardRestHandler {
 
-    @Autowired
-    ConsumerRepository repository;
+    private final ConsumerBusiness consumerBusiness;
 
-    @Autowired
-    ExtractRepository extractRepository;
+    /** Por conter mais de 50.000 registros, ouve a necessidade de padronizar um valor para buscar apenas os 30 primeiros registros.
+     * Caso necessario, basta mandar os valores page e size como parametro */
 
-
-    /* Listar todos os clientes (obs.: tabela possui cerca de 50.000 registros) */
-    @ResponseBody
-    @ResponseStatus(HttpStatus.OK)
-    @RequestMapping(value = "/consumerList", method = RequestMethod.GET)
-    public List<Consumer> listAllConsumers() {
-        log.info("obtendo todos clientes");
-        var consumers = repository.getAllConsumersList();
-
-        return consumers;
+    @GetMapping()
+    public ResponseEntity<Page<ConsumerResponse>> listAllConsumers(@RequestParam(required = false, defaultValue = "0") int page,
+                                                                   @RequestParam(required = false, defaultValue = "30") int size) {
+        return new ResponseEntity<>(consumerBusiness.getAllConsumersList(PageRequest.of(page, size)), HttpStatus.OK);
     }
 
-    /* Cadastrar novos clientes */
-    @RequestMapping(value = "/createConsumer", method = RequestMethod.POST)
-    public void createConsumer(@RequestBody Consumer consumer) {
-        repository.save(consumer);
+    /** Método responsavel por buscar um consumidor com todos os detalhes (Dados do Consumidor, dos cartoes e extrado de cada cartão) pelo numero do documento */
+    @GetMapping("/{documentNumber}")
+    public ResponseEntity<ConsumerDetailResponse> getConsumerByDocumentNumber(@PathVariable String documentNumber) {
+        return new ResponseEntity<>(consumerBusiness.findConsumerDetailByDocumentNumber(documentNumber), HttpStatus.OK);
     }
 
-    // Atualizar cliente, lembrando que não deve ser possível alterar o saldo do cartão
-    @RequestMapping(value = "/updateConsumer", method = RequestMethod.POST)
-    public void updateConsumer(@RequestBody Consumer consumer) {
-        repository.save(consumer);
+    @PostMapping( "/create")
+    public ResponseEntity<String> createConsumer(@RequestBody ConsumerRequest consumer) {
+        consumerBusiness.save(consumer);
+        return new ResponseEntity<>("Consumidor ".concat(consumer.getName()).concat(" criado com sucesso!") , HttpStatus.CREATED);
     }
 
-    /*
-     * Credito de valor no cartão
-     *
-     * cardNumber: número do cartão
-     * value: valor a ser creditado (adicionado ao saldo)
-     */
-    @RequestMapping(value = "/setcardbalance", method = RequestMethod.GET)
-    public void setBalance(int cardNumber, double value) {
-        Consumer consumer = null;
-        consumer = repository.findByDrugstoreNumber(cardNumber);
-
-        if(consumer != null) {
-            // é cartão de farmácia
-            consumer.setDrugstoreCardBalance(consumer.getDrugstoreCardBalance() + value);
-            repository.save(consumer);
-        } else {
-            consumer = repository.findByFoodCardNumber(cardNumber);
-            if(consumer != null) {
-                // é cartão de refeição
-                consumer.setFoodCardBalance(consumer.getFoodCardBalance() + value);
-                repository.save(consumer);
-            } else {
-                // É cartão de combustivel
-                consumer = repository.findByFuelCardNumber(cardNumber);
-                consumer.setFuelCardBalance(consumer.getFuelCardBalance() + value);
-                repository.save(consumer);
-            }
-        }
+    @PutMapping("/update")
+    public ResponseEntity<String> updateConsumer(@RequestBody ConsumerUpdateRequest consumerUpdate) {
+        consumerBusiness.update(consumerUpdate);
+        return new ResponseEntity<>("Consumidor ".concat(consumerUpdate.getName()).concat(" atualizado com sucesso!"), HttpStatus.OK);
     }
 
-    /*
-     * Débito de valor no cartão (compra)
-     *
-     * establishmentType: tipo do estabelecimento comercial
-     * establishmentName: nome do estabelecimento comercial
-     * cardNumber: número do cartão
-     * productDescription: descrição do produto
-     * value: valor a ser debitado (subtraído)
-     */
-    @ResponseBody
-    @RequestMapping(value = "/buy", method = RequestMethod.GET)
-    public void buy(int establishmentType, String establishmentName, int cardNumber, String productDescription, double value) {
-        Consumer consumer = null;
-        /* O valor só podem ser debitado do catão com o tipo correspondente ao tipo do estabelecimento da compra.
+    /** Método responsavel por adicionar um cartão ao consumidor.
+     * Existia a possibilidade de colocar esse metodo dentro do CardController, mas como a adição de um cartão tem haver com o consumidor
+     * Eu deixei aqui*/
 
-        *  Exemplo: Se a compra é em um estabelecimeto de Alimentação (food) então o valor só pode ser debitado do cartão alimentação
-        *
-        * Tipos dos estabelcimentos:
-        *    1) Alimentação (Food)
-        *    2) Farmácia (DrugStore)
-        *    3) Posto de combustivel (Fuel)
-        */
-
-        if (establishmentType == 1) {
-            // Para compras no cartão de alimentação o cliente recebe um desconto de 10%
-            Double cashback  = (value / 100) * 10;
-            value = value - cashback;
-
-            consumer = repository.findByFoodCardNumber(cardNumber);
-            consumer.setFoodCardBalance(consumer.getFoodCardBalance() - value);
-            repository.save(consumer);
-
-        }else if(establishmentType == 2) {
-            consumer = repository.findByDrugstoreNumber(cardNumber);
-            consumer.setDrugstoreCardBalance(consumer.getDrugstoreCardBalance() - value);
-            repository.save(consumer);
-
-        } else {
-            // Nas compras com o cartão de combustivel existe um acrescimo de 35%;
-            Double tax  = (value / 100) * 35;
-            value = value + tax;
-
-            consumer = repository.findByFuelCardNumber(cardNumber);
-            consumer.setFuelCardBalance(consumer.getFuelCardBalance() - value);
-            repository.save(consumer);
-        }
-
-        Extract extract = new Extract(establishmentName, productDescription, new Date(), cardNumber, value);
-        extractRepository.save(extract);
+    @PostMapping( "/addcard")
+    public ResponseEntity<String> addCard(@RequestBody CardRequest cardRequest) {
+        consumerBusiness.addConsumerCard(cardRequest.getDocumentNumber(), cardRequest.getType(), cardRequest.getCardNumber());
+        return new ResponseEntity<>("Cartão adicionado com sucesso!", HttpStatus.CREATED);
     }
 
 }

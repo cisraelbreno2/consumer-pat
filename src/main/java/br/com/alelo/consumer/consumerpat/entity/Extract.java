@@ -1,62 +1,46 @@
 package br.com.alelo.consumer.consumerpat.entity;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import javax.persistence.*;
 import java.util.Date;
 
+/**
+ * @Builder: com o builder evitamos muitos boilerplate dentro da classe e tambem nos dá flexibilidade na montagem do objeto.
+ * @Column(nullable = false): Foi adicionado para garantir que os campos não sejam nulos.
+ */
 @Data
 @Entity
 @NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Extract {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    int id;
+    private Integer id;
 
-    @Column
-    int establishmentNameId;
+    @Column(nullable = false)
+    private String establishmentName;
 
-    @Column
-    String establishmentName;
+    @Column(nullable = false)
+    private String productDescription;
 
-    @Column
-    String productDescription;
+    @Column(nullable = false)
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date dateBuy;
 
-    @Column
-    Date dateBuy;
+    /**
+     * card: É através do card que temos o link entre os extratos e os cartões.
+     */
+    @ManyToOne
+    @JoinColumn(name = "cardId", referencedColumnName = "id", nullable = false)
+    private Card card;
 
-    @Column
-    int cardNumber;
-
-    @Column
-    double amount;
-
-    public Extract(int id, int establishmentNameId, String establishmentName, String productDescription, Date dateBuy, int cardNumber, double amount) {
-        this.id = id;
-        this.establishmentNameId = establishmentNameId;
-        this.establishmentName = establishmentName;
-        this.productDescription = productDescription;
-        this.dateBuy = dateBuy;
-        this.cardNumber = cardNumber;
-        this.amount = amount;
-    }
-
-    public Extract( String productDescription, Date dateBuy, int cardNumber, double amount) {
-        this.productDescription = productDescription;
-        this.dateBuy = dateBuy;
-        this.cardNumber = cardNumber;
-        this.amount = amount;
-    }
-
-    public Extract(String establishmentName, String productDescription, Date dateBuy, int cardNumber, double amount) {
-        this.establishmentNameId = establishmentNameId;
-        this.establishmentName = establishmentName;
-        this.productDescription = productDescription;
-        this.dateBuy = dateBuy;
-        this.cardNumber = cardNumber;
-        this.amount = amount;
-    }
+    @Column(nullable = false)
+    private Double amount;
 
 }
